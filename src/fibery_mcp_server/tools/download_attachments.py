@@ -38,8 +38,13 @@ def download_attachments_tool() -> mcp.types.Tool:
                     "items": {"type": "string"},
                     "description": "Optional: List of specific attachment IDs to get download links for. If not provided, returns links for all attachments.",
                 },
+                "file_secrets": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional: List of file secrets to get download links for directly (for inline files from markdown pattern /api/files/SECRET). When provided, entity_type and entity_id are ignored.",
+                },
             },
-            "required": ["entity_type", "entity_id"],
+            "required": [],
         },
     )
 
@@ -47,10 +52,23 @@ def download_attachments_tool() -> mcp.types.Tool:
 async def handle_download_attachments(
     fibery_client: FiberyClient, arguments: Dict[str, Any]
 ) -> List[mcp.types.TextContent]:
-    entity_type = arguments["entity_type"]
-    entity_id = arguments["entity_id"]
+    entity_type = arguments.get("entity_type")
+    entity_id = arguments.get("entity_id")
     attachment_names = arguments.get("attachment_names", [])
     attachment_ids = arguments.get("attachment_ids", [])
+    file_secrets = arguments.get("file_secrets", [])
+
+    # If file_secrets are provided, handle inline files
+    if file_secrets:
+        return await _handle_inline_files(fibery_client, file_secrets)
+
+    # Otherwise, require entity_type and entity_id for attachment queries
+    if not entity_type or not entity_id:
+        return [
+            mcp.types.TextContent(
+                type="text", text="Either file_secrets or both entity_type and entity_id must be provided"
+            )
+        ]
 
     # Query the entity to get all its attachments
     query = {
@@ -118,5 +136,85 @@ async def handle_download_attachments(
         result_text += f"ID: {link['id']}\n"
         result_text += f"Download URL: {link['download_url']}\n"
         result_text += f"Curl command: curl -H 'Authorization: Token YOUR_FIBERY_TOKEN' '{link['download_url']}' -o '{link['name']}'\n\n"
+
+    return [mcp.types.TextContent(type="text", text=result_text)]
+
+
+async def _handle_inline_files(fibery_client: FiberyClient, file_secrets: List[str]) -> List[mcp.types.TextContent]:
+    """Handle inline files by making GET requests to get redirect URLs."""
+    import httpx
+
+    download_links = []
+    base_url = f"https://{fibery_client._FiberyClient__fibery_host}/api/files"
+
+    # Create HTTP client with auth header
+    headers = {"Authorization": f"Token {fibery_client._FiberyClient__fibery_api_token}"}
+
+    async with httpx.AsyncClient(follow_redirects=False) as client:
+        for secret in file_secrets:
+            file_url = f"{base_url}/{secret}"
+
+            try:
+                # Make GET request to get redirect
+                response = await client.get(file_url, headers=headers)
+
+                if response.status_code in [301, 302, 303, 307, 308]:
+                    # Extract redirect URL from Location header
+                    redirect_url = response.headers.get("Location")
+                    if redirect_url:
+                        download_links.append(
+                            {
+                                "secret": secret,
+                                "fibery_url": file_url,
+                                "download_url": redirect_url,
+                            }
+                        )
+                    else:
+                        download_links.append(
+                            {
+                                "secret": secret,
+                                "fibery_url": file_url,
+                                "error": "No redirect URL found",
+                            }
+                        )
+                elif response.status_code == 200:
+                    # Direct access, no redirect needed
+                    download_links.append(
+                        {
+                            "secret": secret,
+                            "fibery_url": file_url,
+                            "download_url": file_url,
+                        }
+                    )
+                else:
+                    download_links.append(
+                        {
+                            "secret": secret,
+                            "fibery_url": file_url,
+                            "error": f"HTTP {response.status_code}: {response.text}",
+                        }
+                    )
+            except Exception as e:
+                download_links.append(
+                    {
+                        "secret": secret,
+                        "fibery_url": file_url,
+                        "error": f"Request failed: {str(e)}",
+                    }
+                )
+
+    # Format results
+    result_text = f"Found {len(download_links)} file(s):\n\n"
+    for link in download_links:
+        result_text += f"Secret: {link['secret']}\n"
+        result_text += f"Fibery URL: {link['fibery_url']}\n"
+
+        if "error" in link:
+            result_text += f"Error: {link['error']}\n"
+        else:
+            result_text += f"Download URL: {link['download_url']}\n"
+            result_text += f"Curl command: curl '{link['download_url']}' -o 'file_{link['secret']}'\n"
+
+        result_text += "\n"
 
     return [mcp.types.TextContent(type="text", text=result_text)]
