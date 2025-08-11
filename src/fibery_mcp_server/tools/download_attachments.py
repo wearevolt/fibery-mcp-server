@@ -57,7 +57,7 @@ async def handle_download_attachments(
         "q/from": entity_type,
         "q/select": [
             "fibery/id",
-            {"Files/Files": {"q/select": ["fibery/secret", "Files/Name", "fibery/id"], "q/limit": "q/no-limit"}},
+            {"Files/Files": {"q/select": ["fibery/secret", "fibery/name", "fibery/id"], "q/limit": "q/no-limit"}},
         ],
         "q/where": ["=", ["fibery/id"], "$entity-id"],
         "q/limit": 1,
@@ -84,7 +84,7 @@ async def handle_download_attachments(
     if attachment_names or attachment_ids:
         filtered_files = []
         for file in files:
-            if attachment_names and file["Files/Name"] in attachment_names:
+            if attachment_names and file["fibery/name"] in attachment_names:
                 filtered_files.append(file)
             elif attachment_ids and file["fibery/id"] in attachment_ids:
                 filtered_files.append(file)
@@ -105,7 +105,7 @@ async def handle_download_attachments(
         download_url = f"{base_url}/{file['fibery/secret']}"
         download_links.append(
             {
-                "name": file["Files/Name"],
+                "name": file["fibery/name"],
                 "id": file["fibery/id"],
                 "secret": file["fibery/secret"],
                 "download_url": download_url,
