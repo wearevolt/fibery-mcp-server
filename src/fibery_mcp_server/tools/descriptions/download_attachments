@@ -1,0 +1,19 @@
+Get download links for attachments from a Fibery entity. You can get links for all attachments from an entity or specify which ones by name or ID.
+
+Use this tool when you need to:
+- Get download URLs for all files/attachments from an entity
+- Get download URLs for specific attachments by name or ID
+- List available attachments for an entity with their download links
+
+The tool will:
+1. Query the entity to get all its attachments with their secrets
+2. Filter attachments based on your criteria (if specified)
+3. Return download URLs in the format: https://FIBERY_HOST/api/files/{secret}
+4. Provide attachment metadata (name, ID, download URL)
+
+Examples:
+- Get download links for all attachments from a Cricket/Player entity
+- Get download link for only "image.png" from a specific entity
+- Get download links for attachments with specific IDs
+
+The returned URLs can be used directly with curl or any HTTP client to download the files.
